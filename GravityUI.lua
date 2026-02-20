@@ -1077,12 +1077,31 @@ end
 function GravityUI:Window(opts)
     local gui = Instance.new("ScreenGui")
     gui.Name = "GravityUI"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 100
+
+    -- Attempt to protect GUI (Synapse/others)
     if syn and syn.protect_gui then
-        syn.protect_gui(gui)
-        gui.Parent = CoreGui
-    else
-        gui.Parent = CoreGui
+        pcall(syn.protect_gui, gui)
+    elseif gethui then
+        gui.Parent = gethui()
     end
+
+    -- Fallback parenting if gethui didn't work or wasn't used
+    if not gui.Parent then
+        local success, err = pcall(function()
+            gui.Parent = CoreGui
+        end)
+        if not success then
+            local player = Players.LocalPlayer
+            if player then
+                gui.Parent = player:WaitForChild("PlayerGui")
+            end
+        end
+    end
+    
     return Window.new(gui, opts)
 end
 
