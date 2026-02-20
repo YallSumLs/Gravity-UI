@@ -796,8 +796,142 @@ function TextInput.new(parent, theme, tooltip, opts)
     return self
 end
 Components.TextInput = TextInput
-Components.Keybind = require(script.Src.Components.Keybind) -- Wait, cant fetch.
--- Keybind omitted for brevity, logic is straightforward similar to others.
+-- -------------------------------------------------------------------------
+-- Component: Keybind
+-- -------------------------------------------------------------------------
+
+local Keybind = {}
+Keybind.__index = Keybind
+
+-- Blacklisted keys
+local BLACKLISTED = {
+    [Enum.KeyCode.Unknown]       = true,
+    [Enum.KeyCode.W]             = true,
+    [Enum.KeyCode.A]             = true,
+    [Enum.KeyCode.S]             = true,
+    [Enum.KeyCode.D]             = true,
+    [Enum.KeyCode.Escape]        = true,
+}
+
+function Keybind.new(parent, theme, tooltip, opts)
+    local self       = setmetatable({}, Keybind)
+    self._theme      = theme
+    self._key        = opts.Default or Enum.KeyCode.Unknown
+    self._mode       = opts.Mode    or "Toggle"   -- Always | Toggle | Hold
+    self._active     = false
+    self._listening  = false
+    self._callbacks  = { opts.Callback or function() end }
+    self._conns      = {}
+
+    local root = Utility.Make("Frame", {
+        BackgroundTransparency = 1,
+        Size                   = UDim2.new(1, 0, 0, 38), -- matching COMP_H
+        Parent                 = parent
+    })
+    
+    -- Label
+    Utility.Make("TextLabel", {
+        BackgroundTransparency = 1,
+        Text                   = opts.Label or "Keybind",
+        TextColor3             = theme.Text,
+        TextSize               = 13,
+        FontFace               = Font.fromEnum(Enum.Font.GothamMedium),
+        Size                   = UDim2.new(1, -160, 1, 0),
+        TextXAlignment         = Enum.TextXAlignment.Left,
+        Parent                 = root
+    })
+
+    -- Mode button (small)
+    local modeBtn = Utility.Make("TextButton", {
+        BackgroundColor3     = theme.Surface2,
+        Text                 = self._mode,
+        TextColor3           = theme.TextDim,
+        TextSize             = 11,
+        FontFace             = Font.fromEnum(Enum.Font.GothamMedium),
+        Size                 = UDim2.fromOffset(60, 26),
+        Position             = UDim2.new(1, -140, 0.5, -13),
+        AutoButtonColor      = false,
+        Parent               = root
+    })
+    Utility.Round(modeBtn, UDim.new(0, 4))
+    Utility.Stroke(modeBtn, theme.Border, 1, 0.4)
+
+    local MODES = { "Always", "Toggle", "Hold" }
+    modeBtn.MouseButton1Click:Connect(function()
+        local idx = 1
+        for i, m in ipairs(MODES) do
+            if m == self._mode then idx = i; break end
+        end
+        self._mode = MODES[(idx % #MODES) + 1]
+        modeBtn.Text = self._mode
+        self._active = false
+    end)
+
+    -- Key tag
+    local keyTag = Utility.Make("TextButton", {
+        BackgroundColor3     = theme.Surface2,
+        Text                 = Utility.KeyName(self._key),
+        TextColor3           = theme.Accent,
+        TextSize             = 12,
+        FontFace             = Font.fromEnum(Enum.Font.GothamBold),
+        Size                 = UDim2.fromOffset(72, 26),
+        Position             = UDim2.new(1, -74, 0.5, -13),
+        AutoButtonColor      = false,
+        Parent               = root
+    })
+    Utility.Round(keyTag, UDim.new(0, 4))
+    Utility.Stroke(keyTag, theme.Accent, 1, 0.5)
+
+    -- Listen logic
+    keyTag.MouseButton1Click:Connect(function()
+        if self._listening then return end
+        self._listening = true
+        keyTag.Text       = "..."
+        keyTag.TextColor3 = theme.Warning
+    end)
+
+    local inputConn = UserInputService.InputBegan:Connect(function(inp, gp)
+        if not self._listening then
+            if inp.KeyCode == self._key and not gp then
+                if self._mode == "Always" then
+                    self._active = true
+                    for _, cb in ipairs(self._callbacks) do task.spawn(cb, true) end
+                elseif self._mode == "Toggle" then
+                    self._active = not self._active
+                    for _, cb in ipairs(self._callbacks) do task.spawn(cb, self._active) end
+                elseif self._mode == "Hold" then
+                    self._active = true
+                    for _, cb in ipairs(self._callbacks) do task.spawn(cb, true) end
+                end
+            end
+            return
+        end
+
+        if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if BLACKLISTED[inp.KeyCode] then return end
+
+        self._listening = false
+        self._key       = inp.KeyCode
+        keyTag.Text       = Utility.KeyName(self._key)
+        keyTag.TextColor3 = theme.Accent
+    end)
+    
+    local releaseConn = UserInputService.InputEnded:Connect(function(inp)
+        if self._mode == "Hold" and inp.KeyCode == self._key then
+            self._active = false
+            for _, cb in ipairs(self._callbacks) do task.spawn(cb, false) end
+        end
+    end)
+
+    table.insert(self._conns, inputConn)
+    table.insert(self._conns, releaseConn)
+    
+    if opts.Tooltip and tooltip then tooltip:Attach(root, opts.Tooltip) end
+
+    return self
+end
+
+Components.Keybind = Keybind
 
 -- -------------------------------------------------------------------------
 -- Main: Window & Tab
